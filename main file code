@@ -1,0 +1,315 @@
+Step 1:
+Import Library
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+pd.set_option('display.max_columns', None)
+plt.style.use('seaborn-v0_8')
+
+%matplotlib inline
+
+Step 2: Upload the Excel File
+
+from google.colab import files
+
+uploaded = files.upload()
+
+excel_file = pd.ExcelFile("NCRB_CII-2020.xlsx")
+
+print("Available Sheets:")
+print(excel_file.sheet_names)
+
+Step 3: Read the Excel Sheet
+
+This code reads the first sheet of the Excel file. Check the available sheet names printed above to confirm that the first sheet contains your required data.
+
+df = pd.read_excel(
+    "NCRB_CII-2020.xlsx",
+    sheet_name=excel_file.sheet_names[0]
+)
+
+print("First 5 Rows:")
+display(df.head())
+
+print("Dataset Shape:", df.shape)
+
+print("\nDataset Information:")
+df.info()
+
+print("\nStatistical Summary:")
+display(df.describe(include='all'))
+
+Step 4: Clean the Dataset
+
+The following code removes unnecessary spaces from column names and removes a summary row if one exists.
+
+# Remove extra spaces from column names
+df.columns = df.columns.astype(str).str.strip()
+
+# Remove completely empty rows
+df.dropna(how='all', inplace=True)
+
+# Reset the index
+df.reset_index(drop=True, inplace=True)
+
+print("Dataset after cleaning:")
+display(df.head())
+
+print("Dataset Shape:", df.shape)
+
+Step 5: Rename Columns
+
+Important: This step assumes your Excel sheet contains exactly 20 columns in the order shown below. If the actual column names or order differ, update the mapping accordingly.
+
+expected_columns = [
+    'Index', 'City', 'Boys', 'Girls', 'Juvenile_Total',
+    'M_18_30', 'F_18_30', 'Total_18_30',
+    'M_30_45', 'F_30_45', 'Total_30_45',
+    'M_45_60', 'F_45_60', 'Total_45_60',
+    'M_60_plus', 'F_60_plus', 'Total_60_plus',
+    'Total_Male', 'Total_Female', 'Grand_Total'
+]
+
+if len(df.columns) == len(expected_columns):
+    df.columns = expected_columns
+else:
+    raise ValueError(
+        f"Expected 20 columns, but found {len(df.columns)}. "
+        "Check the Excel sheet and update the column names."
+    )
+
+print("Column Names:")
+print(df.columns.tolist())
+
+Step 6: Remove Summary Rows
+
+# Remove summary rows such as Total Cities
+df = df[
+    ~df['City'].astype(str).str.strip().str.lower().isin(
+        ['total cities', 'total city', 'total']
+    )
+].copy()
+
+# Remove rows without a city name
+df = df[
+    df['City'].notna() &
+    (df['City'].astype(str).str.strip() != '')
+].copy()
+
+df.reset_index(drop=True, inplace=True)
+
+print("Dataset after removing summary rows:")
+display(df.head())
+
+Step 7: Convert Columns to Numeric
+
+# Convert numeric columns
+numeric_cols = [
+    col for col in df.columns
+    if col != 'City'
+]
+
+for col in numeric_cols:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Display missing values
+print("Missing Values Before Treatment:")
+print(df.isnull().sum())
+
+Step 8: Handle Missing Values
+
+# Fill missing numeric values with column means
+for col in numeric_cols:
+    if df[col].notna().any():
+        df[col] = df[col].fillna(df[col].mean())
+
+print("Missing Values After Treatment:")
+print(df.isnull().sum())
+
+Note: Mean imputation is suitable for some exploratory analyses, but it can distort crime totals. For official reporting, investigate missing values and avoid treating unknown counts as actual crime counts.
+
+Step 9: Create New Features
+
+# Gender ratio
+df['Gender_Ratio'] = (
+    df['Total_Male'] /
+    df['Total_Female'].replace(0, np.nan)
+)
+
+# Juvenile percentage
+df['Juvenile_Percent'] = np.where(
+    df['Grand_Total'] > 0,
+    (df['Juvenile_Total'] / df['Grand_Total']) * 100,
+    np.nan
+)
+
+print("New Features:")
+display(
+    df[['City', 'Gender_Ratio', 'Juvenile_Percent']].head()
+)
+
+Step 10: Calculate Total Crime Counts
+
+total_male = df['Total_Male'].sum()
+total_female = df['Total_Female'].sum()
+grand_total = df['Grand_Total'].sum()
+
+print("Total Male Crimes:", total_male)
+print("Total Female Crimes:", total_female)
+print("Overall Crimes:", grand_total)
+
+These totals represent the sum of the corresponding columns in your dataset. Confirm the definitions in the original NCRB table before interpreting them as separate crime counts.
+
+Step 11: Find the Top 10 Cities
+
+top10 = df.sort_values(
+    by='Grand_Total',
+    ascending=False
+).head(10)
+
+print("Top 10 Cities by Grand Total:")
+display(top10[['City', 'Grand_Total']])
+
+Step 12: Analyze Age Groups
+
+age_groups = {
+    '18–30': df['Total_18_30'].sum(),
+    '30–45': df['Total_30_45'].sum(),
+    '45–60': df['Total_45_60'].sum(),
+    '60+': df['Total_60_plus'].sum()
+}
+
+print("Age Group Analysis:")
+
+for age, count in age_groups.items():
+    print(f"{age}: {count}")
+
+Step 13: Find Cities with High Female Counts
+
+high_female = df[df['Total_Female'] > 1000]
+
+print("Cities with Female Counts Greater Than 1000:")
+display(high_female[['City', 'Total_Female']])
+
+Step 14: Find Cities with High Juvenile Percentages
+
+high_juvenile = df[df['Juvenile_Percent'] > 10]
+
+print("Cities with Juvenile Percentage Greater Than 10%:")
+display(high_juvenile[['City', 'Juvenile_Percent']])
+
+Step 15: Bar Chart — Top 10 Cities
+
+plt.figure(figsize=(12, 6))
+
+plt.bar(
+    top10['City'].astype(str),
+    top10['Grand_Total']
+)
+
+plt.xticks(rotation=45, ha='right')
+plt.title('Top 10 Cities by Crime Count')
+plt.xlabel('City')
+plt.ylabel('Grand Total')
+plt.tight_layout()
+plt.show()
+
+Step 16: Stacked Bar Chart — Gender-wise Counts
+
+top5 = top10.head(5)
+
+plt.figure(figsize=(10, 6))
+
+plt.bar(
+    top5['City'].astype(str),
+    top5['Total_Male'],
+    label='Male'
+)
+
+plt.bar(
+    top5['City'].astype(str),
+    top5['Total_Female'],
+    bottom=top5['Total_Male'],
+    label='Female'
+)
+
+plt.title('Gender-wise Counts in Top 5 Cities')
+plt.xlabel('City')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+Important: This chart assumes the male and female columns represent mutually exclusive counts of the same type. Check the source table before interpreting the stacked totals.
+
+Step 17: Pie Chart — Age Group Distribution
+
+# Keep only non-negative age-group totals
+age_labels = [
+    age for age, count in age_groups.items()
+    if pd.notna(count) and count > 0
+]
+
+age_values = [
+    age_groups[age] for age in age_labels
+]
+
+if age_values:
+    plt.figure(figsize=(8, 8))
+
+    plt.pie(
+        age_values,
+        labels=age_labels,
+        autopct='%1.1f%%',
+        startangle=90
+    )
+
+    plt.title('Distribution of Counts by Age Group')
+    plt.axis('equal')
+    plt.show()
+else:
+    print("No positive age-group totals are available.")
+
+Step 18: Find Cities with the Highest Counts
+
+# City with the highest juvenile count
+if df['Juvenile_Total'].notna().any():
+    max_juvenile = df.loc[df['Juvenile_Total'].idxmax()]
+
+    print(
+        "City with Highest Juvenile Count:",
+        max_juvenile['City']
+    )
+
+    print(
+        "Juvenile Count:",
+        max_juvenile['Juvenile_Total']
+    )
+
+# City with the highest female count
+if df['Total_Female'].notna().any():
+    max_female = df.loc[df['Total_Female'].idxmax()]
+
+    print(
+        "City with Highest Female Count:",
+        max_female['City']
+    )
+
+    print(
+        "Female Count:",
+        max_female['Total_Female']
+    )
+
+Step 19: Final Dataset
+
+print("Final Dataset Shape:", df.shape)
+
+print("\nFinal Dataset Columns:")
+print(df.columns.tolist())
+
+print("\nFinal Dataset:")
+display(df.head(10))
+
